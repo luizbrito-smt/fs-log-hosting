@@ -140,7 +140,7 @@
   .resp-count{font-family:var(--mono);color:var(--text-dim);font-size:14px;}
 
   .toolbar{display:flex;gap:10px;padding:16px 22px;border-bottom:1px solid var(--border-soft);flex-wrap:wrap;align-items:center;}
-  .registro-filter-sticky{position:sticky;top:0 ;z-index:35;background:var(--surface);box-shadow:0 6px 14px rgba(15,23,42,.08);}
+    .registro-filter-sticky{position:sticky;top:0;z-index:35;background:var(--surface);box-shadow:0 6px 14px rgba(15,23,42,.08);}
   .toolbar input[type=text]{flex:1;min-width:180px;}
   .toolbar select{width:auto;min-width:150px;}
   .job-aid-btn{width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:center;transition:.18s ease;flex:0 0 auto;cursor:pointer;padding:4px;overflow:hidden;}
@@ -1251,6 +1251,8 @@ function App({ usuarioAuth, aoAbrirLogin }) {
   const skipSaveAcoesRef = useRef(true);
   const [acoes, setAcoes] = useState([]);
   const [acoesCarregadas, setAcoesCarregadas] = useState(false);
+  const [modoExclusaoMassa, setModoExclusaoMassa] = useState(false);
+  const [acoesSelecionadas, setAcoesSelecionadas] = useState([]);
   useEffect(() => {
     const unsub = DOC_ACOES.onSnapshot((snap) => {
       skipSaveAcoesRef.current = true;
@@ -1394,30 +1396,31 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     DOC_USUARIOS.set({ lista: usuarios, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() }).catch((e) => console.error("Falha ao salvar usuários:", e));
   }, [usuarios]);
 
+  // Garante que João Franco permaneça com perfil ADM mesmo em bases já existentes.
+  useEffect(() => {
+    if (!usuariosCarregados) return;
+    const alvo = "joao.franco@fs.agr.br";
+    setUsuarios((list) => {
+      let alterou = false;
+      const proxima = list.map((u) => {
+        const emails = (u.email || "").split(";").map((e) => e.trim().toLowerCase());
+        if (emails.includes(alvo) && u.perfil !== "ADM") {
+          alterou = true;
+          return { ...u, perfil: "ADM" };
+        }
+        return u;
+      });
+      return alterou ? proxima : list;
+    });
+  }, [usuariosCarregados]);
+
   /* ---------- Identidade: derivada do login do Firebase (não mais senha manual) ---------- */
   const usuarioAtual = useMemo(() => {
     if (!usuarioAuth) return null;
     const alvo = (usuarioAuth.email || "").trim().toLowerCase();
     return usuarios.find((u) => (u.email || "").split(";").some((e) => e.trim().toLowerCase() === alvo)) || null;
   }, [usuarios, usuarioAuth]);
-  // João Paulo de Oliveira Franco possui acesso administrativo total.
-  // A verificação pelo e-mail garante a permissão mesmo antes da migração do cadastro salvo no Firestore.
-  const isJoaoFranco = (usuarioAuth?.email || "").trim().toLowerCase() === "joao.franco@fs.agr.br";
-  const isAdm = usuarioAtual ? (usuarioAtual.perfil === "ADM" || isJoaoFranco) : isJoaoFranco;
-
-  // Migra automaticamente o cadastro já existente de João Franco para ADM no Firestore.
-  useEffect(() => {
-    if (!usuariosCarregados) return;
-    const precisaMigrar = usuarios.some((u) =>
-      (u.email || "").split(";").some((e) => e.trim().toLowerCase() === "joao.franco@fs.agr.br") && u.perfil !== "ADM"
-    );
-    if (!precisaMigrar) return;
-    setUsuarios((list) => list.map((u) =>
-      (u.email || "").split(";").some((e) => e.trim().toLowerCase() === "joao.franco@fs.agr.br")
-        ? { ...u, perfil: "ADM" }
-        : u
-    ));
-  }, [usuariosCarregados, usuarios]);
+  const isAdm = usuarioAtual ? usuarioAtual.perfil === "ADM" : false;
 
   // A aba Usuários é exclusiva para perfis ADM.
   // Se um usuário comum estiver nessa aba por qualquer estado anterior, volta ao Registro.
@@ -2003,6 +2006,46 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     setModalAberto(false);
     setToast("Ação excluída.");
     setTimeout(() => setToast(null), 3000);
+  }
+
+
+  function alternarModoExclusaoMassa() {
+    if (!isAdm) return;
+    setModoExclusaoMassa((v) => !v);
+    setAcoesSelecionadas([]);
+  }
+
+  function alternarSelecaoMassa(id) {
+    if (!isAdm || !modoExclusaoMassa) return;
+    setAcoesSelecionadas((lista) => lista.includes(id) ? lista.filter((x) => x !== id) : [...lista, id]);
+  }
+
+  function selecionarAcoesVisiveis() {
+    if (!isAdm) return;
+    setAcoesSelecionadas(Array.from(new Set(acoesFiltradas.map((a) => a.id))));
+  }
+
+  function selecionarTodaBase() {
+    if (!isAdm) return;
+    setAcoesSelecionadas(acoes.map((a) => a.id));
+  }
+
+  function limparSelecaoMassa() {
+    setAcoesSelecionadas([]);
+  }
+
+  function excluirSelecionadasEmMassa() {
+    if (!isAdm) { setToast("Apenas usuários ADM podem excluir ações em massa."); setTimeout(() => setToast(null), 3000); return; }
+    const qtd = acoesSelecionadas.length;
+    if (!qtd) { setToast("Selecione pelo menos uma ação para excluir."); setTimeout(() => setToast(null), 3000); return; }
+    const ok = window.confirm(`Você está prestes a excluir ${qtd} ação(ões).\n\nEsta operação não poderá ser desfeita. Deseja continuar?`);
+    if (!ok) return;
+    const ids = new Set(acoesSelecionadas);
+    setAcoes((list) => list.filter((a) => !ids.has(a.id)));
+    setAcoesSelecionadas([]);
+    setModoExclusaoMassa(false);
+    setToast(`${qtd} ação(ões) excluída(s).`);
+    setTimeout(() => setToast(null), 3500);
   }
 
   function mudarStatusRapido(acao, novoStatus) {
@@ -2780,8 +2823,24 @@ function App({ usuarioAuth, aoAbrirLogin }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" }}>
                 <button className="btn-primary" onClick={abrirNova}><PlusIcon size={16} /> Nova Ação</button>
                 <button className="btn-subacao" onClick={abrirSeletorSubAcao}><PlusIcon size={14} /> Sub Ação</button>
+                {isAdm && (
+                  <button className={modoExclusaoMassa ? "btn-danger" : "btn-ghost"} onClick={alternarModoExclusaoMassa}>
+                    <TrashIcon size={14} /> {modoExclusaoMassa ? "Cancelar exclusão" : "Excluir em massa"}
+                  </button>
+                )}
               </div>
             </div>
+            {isAdm && modoExclusaoMassa && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "10px 22px", background: "var(--panel-2)", borderBottom: "1px solid var(--border-soft)" }}>
+                <strong>{acoesSelecionadas.length} selecionada(s)</strong>
+                <button className="btn-ghost" onClick={selecionarAcoesVisiveis}>Selecionar ações exibidas ({acoesFiltradas.length})</button>
+                <button className="btn-ghost" onClick={selecionarTodaBase}>Selecionar toda a base ({acoes.length})</button>
+                <button className="btn-ghost" onClick={limparSelecaoMassa} disabled={!acoesSelecionadas.length}>Limpar seleção</button>
+                <button className="btn-danger" onClick={excluirSelecionadasEmMassa} disabled={!acoesSelecionadas.length}>
+                  <TrashIcon size={14} /> Excluir selecionadas
+                </button>
+              </div>
+            )}
             <div className="toolbar registro-filter-sticky">
               <input type="text" placeholder="Buscar por ação, item ou responsável…" value={busca} onChange={(e) => setBusca(e.target.value)} />
               <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
@@ -2818,7 +2877,16 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                   <col className="col-eficacia" /><col className="col-actions" />
                 </colgroup>
                 <thead><tr>
-                  <th className="th-compact">Item</th>
+                  <th className="th-compact">
+                    {isAdm && modoExclusaoMassa ? (
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                        <input type="checkbox"
+                          checked={acoesFiltradas.length > 0 && acoesFiltradas.every((a) => acoesSelecionadas.includes(a.id))}
+                          onChange={(e) => e.target.checked ? selecionarAcoesVisiveis() : limparSelecaoMassa()} />
+                        <span>Item</span>
+                      </label>
+                    ) : "Item"}
+                  </th>
                   <th className="th-compact">Data</th>
                   <th className="th-compact">Evento</th>
                   <th>Ação</th>
@@ -2890,7 +2958,14 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                 <tbody>
                   {acoesFiltradas.map((a) => (
                     <tr key={a.id}>
-                      <td className="td-compact"><span className="item-tag">{a.item}</span></td>
+                      <td className="td-compact">
+                        {isAdm && modoExclusaoMassa ? (
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" checked={acoesSelecionadas.includes(a.id)} onChange={() => alternarSelecaoMassa(a.id)} />
+                            <span className="item-tag">{a.item}</span>
+                          </label>
+                        ) : <span className="item-tag">{a.item}</span>}
+                      </td>
                       <td className="td-compact">{isAdm ? (
                         <input className="inline-edit" type="date" value={a.data || ""}
                           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
@@ -3026,7 +3101,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                           placeholder="Eficácia da implementação" onBlur={(e) => atualizarCampoInline(a.id, "eficacia", e.target.value)} />
                       ) : (a.eficacia ? <span className="wrap-box">{a.eficacia}</span> : <span className="cell-empty">—</span>)}</td>
                       <td className="td-compact">
-                        {isAdm ? (
+                        {isAdm && !modoExclusaoMassa ? (
                           <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); excluir(a); }} title="Excluir ação"><TrashIcon size={13} /></button>
                         ) : null}
                       </td>
