@@ -248,6 +248,8 @@
   .inline-edit:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(59,130,246,0.12);}
   textarea.inline-edit{resize:none;min-height:58px;max-height:150px;overflow-y:auto;}
   input[type=date].inline-edit{padding:6px 7px;font-size:12px;cursor:pointer;}
+  input[type=date].inline-edit::-webkit-calendar-picker-indicator{opacity:1;display:block;cursor:pointer;}
+  input[type=date].inline-edit{min-width:132px;color-scheme:light;}
   select.inline-edit{padding:6px 28px 6px 7px;font-size:12px;cursor:pointer;}
   .inline-adm-hint{font-size:11.5px;color:var(--text-faint);display:flex;align-items:center;gap:5px;}
 
@@ -1438,10 +1440,10 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     "alvaci.lima@fs.agr.br",
   ]);
   const emailUsuarioAtual = (usuarioAuth?.email || "").trim().toLowerCase();
-  const podeAlterarQuandoAte = !!usuarioAtual && (
+  const podeAlterarQuandoAte = (
     isAdm ||
     EMAILS_PODEM_ALTERAR_QUANDO.has(emailUsuarioAtual) ||
-    USUARIOS_PODEM_ALTERAR_QUANDO.has(normalizarNomeResponsavel(usuarioAtual.nome))
+    USUARIOS_PODEM_ALTERAR_QUANDO.has(normalizarNomeResponsavel(usuarioAtual?.nome || ""))
   );
 
   // A aba Usuários é exclusiva para perfis ADM.
@@ -3084,9 +3086,16 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                       <td className="td-compact">
                         {(isAdm || podeAlterarQuandoAte) ? (
                           <input className="inline-edit" type="date" value={a.quandoAte || ""}
-                            onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
-                            onKeyDown={impedirDigitacaoData} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}
-                            onChange={(e) => atualizarCampoInline(a.id, "quandoAte", e.target.value)} />
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              try { e.currentTarget.showPicker?.(); } catch (_) {}
+                            }}
+                            onFocus={(e) => {
+                              try { e.currentTarget.showPicker?.(); } catch (_) {}
+                            }}
+                            onChange={(e) => atualizarCampoInline(a.id, "quandoAte", e.target.value)}
+                            title="Clique para abrir o calendário e alterar Quando? (Até)"
+                            style={{ cursor: "pointer", minWidth: 132 }} />
                         ) : (a.quandoAte ? fmtBR(a.quandoAte) : "—")}
                         {estaVencida(a) && <div className="pill pill-vencida" style={{ marginTop: 4 }}><AlertIcon size={10} /> Vencida</div>}
                       </td>
@@ -3281,7 +3290,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                     <input type="date" value={form.dataStart} disabled={campoBloqueadoParaUser("dataStart")} onChange={(e) => setForm({ ...form, dataStart: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Quando? (Até)</label>
-                    <input type="date" value={form.quandoAte} disabled={campoBloqueadoParaUser("quandoAte")} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, quandoAte: e.target.value })} />
+                    <input type="date" value={form.quandoAte} disabled={campoBloqueadoParaUser("quandoAte")} onClick={(e) => { e.stopPropagation(); if (!e.currentTarget.disabled) { try { e.currentTarget.showPicker?.(); } catch (_) {} } }} onFocus={(e) => { if (!e.currentTarget.disabled) { try { e.currentTarget.showPicker?.(); } catch (_) {} } }} onChange={(e) => setForm({ ...form, quandoAte: e.target.value })} title={campoBloqueadoParaUser("quandoAte") ? "Campo bloqueado para este usuário" : "Clique para abrir o calendário"} />
                   </div>
                   <div className="field campo-bloqueado"><label>Data de Conclusão</label>
                     <input type="date" value={form.dataConclusao} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, dataConclusao: e.target.value })} />
