@@ -192,7 +192,7 @@
     background:var(--panel);color:var(--text);height:28px;}
   .filtro-input:focus{border-color:var(--blue);outline:none;}
   .filtro-limpar-btn{padding:3px 7px;font-size:10.5px;}
-  table{width:100%;min-width:2690px;border-collapse:collapse;table-layout:fixed;}
+  table{width:100%;min-width:2820px;border-collapse:collapse;table-layout:fixed;}
   thead th{text-align:left;font-size:12.5px;text-transform:uppercase;letter-spacing:0.35px;color:var(--text-faint);
     padding:12px 10px;border-bottom:1px solid var(--border-soft);font-weight:700;white-space:normal;
     overflow:visible;text-overflow:clip;line-height:1.25;word-break:normal;}
@@ -214,6 +214,7 @@
   col.col-resp{width:250px;}
   col.col-dataconclusao{width:140px;}
   col.col-tempoaberta{width:100px;}
+  col.col-datapostergamento{width:132px;}
   col.col-postergar{width:80px;}
   col.col-justificativa{width:170px;}
   col.col-eficacia{width:190px;}
@@ -863,7 +864,7 @@ const SEED_USUARIOS = [
   { id: "US-16", nome: "Tayres Gomes da Silva", email: "tayres.silva@fs.agr.br", funcao: "Colaborador", perfil: "USER" },
 ];
 
-const CAMPOS_PROTEGIDOS_ADM = ["data", "origem", "acao", "descricao", "dataStart", "importancia", "responsavel"];
+const CAMPOS_PROTEGIDOS_ADM = ["data", "origem", "acao", "descricao", "dataStart", "importancia", "responsavel", "quandoAte"];
 
 
 /* ---------- Regras de Cobrança por E-mail ---------- */
@@ -1079,7 +1080,7 @@ const EyeOffIcon = (p) => <Icon {...p}><path d="M3 3l18 18"/><path d="M10.6 10.6
 const CAMPOS_VAZIOS = {
   item: "", data: hojeISO(), origem: ORIGENS[0], acao: "", descricao: "", fup: "",
   dataStart: hojeISO(), importancia: "B) Alta", status: "B) Pendente", quandoAte: "",
-  responsavel: "", dataConclusao: "", postergar: "NÃO", justificativa: "", eficacia: "",
+  responsavel: "", dataConclusao: "", dataPostergamento: "", postergar: "NÃO", justificativa: "", eficacia: "",
 };
 
 /* ---------- gráfico de barras (Chart.js) ---------- */
@@ -1421,6 +1422,27 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     return usuarios.find((u) => (u.email || "").split(";").some((e) => e.trim().toLowerCase() === alvo)) || null;
   }, [usuarios, usuarioAuth]);
   const isAdm = usuarioAtual ? usuarioAtual.perfil === "ADM" : false;
+  const USUARIOS_PODEM_ALTERAR_QUANDO = new Set([
+    "joao paulo de oliveira franco",
+    "joao franco",
+    "luiz gustavo de brito",
+    "sergio renato leitao",
+    "hevily tainara motter",
+    "alvaci carapia",
+  ]);
+  const EMAILS_PODEM_ALTERAR_QUANDO = new Set([
+    "joao.franco@fs.agr.br",
+    "luiz.brito@fs.agr.br",
+    "sergio.leitao@fs.agr.br",
+    "hevily.motter@fs.agr.br",
+    "alvaci.lima@fs.agr.br",
+  ]);
+  const emailUsuarioAtual = (usuarioAuth?.email || "").trim().toLowerCase();
+  const podeAlterarQuandoAte = !!usuarioAtual && (
+    isAdm ||
+    EMAILS_PODEM_ALTERAR_QUANDO.has(emailUsuarioAtual) ||
+    USUARIOS_PODEM_ALTERAR_QUANDO.has(normalizarNomeResponsavel(usuarioAtual.nome))
+  );
 
   // A aba Usuários é exclusiva para perfis ADM.
   // Se um usuário comum estiver nessa aba por qualquer estado anterior, volta ao Registro.
@@ -1703,7 +1725,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
   }, [acoes, usuarios, dataSimulada, diaSemanaSimulado]);
 
   const [busca, setBusca] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState([]);
   const [filtroImportancia, setFiltroImportancia] = useState("");
   const [filtroResponsavel, setFiltroResponsavel] = useState("");
   const [filtrosColuna, setFiltrosColuna] = useState({});
@@ -1711,6 +1733,10 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     setFiltrosColuna((prev) => ({ ...prev, [chave]: valor }));
   }
   function limparFiltrosColuna() { setFiltrosColuna({}); }
+  function alternarFiltroStatus(status) {
+    setFiltroStatus((atuais) => atuais.includes(status) ? atuais.filter((s) => s !== status) : [...atuais, status]);
+  }
+  function limparFiltroStatus() { setFiltroStatus([]); }
 
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState(null); // id da ação em edição, ou null = nova
@@ -1801,13 +1827,17 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     const acao = acoes.find((a) => a.id === id);
     if (!acao) return;
     if (!isAdm) {
-      if (!usuarioEhResponsavelDaAcao(acao)) {
-        setToast("Você só pode alterar ações atribuídas ao seu usuário.");
-        setTimeout(() => setToast(null), 3000);
-        return;
+      if (campo === "quandoAte" && podeAlterarQuandoAte) {
+        // Permissão especial para atualização do prazo (Quando? Até).
+      } else {
+        if (!usuarioEhResponsavelDaAcao(acao)) {
+          setToast("Você só pode alterar ações atribuídas ao seu usuário.");
+          setTimeout(() => setToast(null), 3000);
+          return;
+        }
+        // USER pode preencher o Detalhamento somente quando o campo ainda estiver vazio.
+        if (campo !== "descricao" || String(acao.descricao || "").trim()) return;
       }
-      // USER pode preencher o Detalhamento somente quando o campo ainda estiver vazio.
-      if (campo !== "descricao" || String(acao.descricao || "").trim()) return;
     }
     setAcoes((list) => list.map((a) => a.id === id ? { ...a, [campo]: valor } : a));
     setToast("Alteração salva.");
@@ -1980,6 +2010,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
         CAMPOS_PROTEGIDOS_ADM.forEach((campo) => {
           // Exceção: se Detalhamento ainda estiver vazio, o responsável pode preenchê-lo uma única vez.
           if (campo === "descricao" && !String(original.descricao || "").trim()) return;
+          if (campo === "quandoAte" && podeAlterarQuandoAte) return;
           dadosForm[campo] = original[campo];
         });
       }
@@ -2063,12 +2094,13 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     if (!userPodeEditarAcaoAtual) return true;
     if (!CAMPOS_PROTEGIDOS_ADM.includes(campo)) return false;
     if (campo === "descricao" && acaoEmEdicao && !String(acaoEmEdicao.descricao || "").trim()) return false;
+    if (campo === "quandoAte" && podeAlterarQuandoAte) return false;
     return true;
   };
 
   const acoesFiltradas = useMemo(() => {
     return acoes.filter((a) => {
-      if (filtroStatus && a.status !== filtroStatus) return false;
+      if (filtroStatus.length && !filtroStatus.includes(a.status)) return false;
       if (filtroImportancia && a.importancia !== filtroImportancia) return false;
       if (filtroResponsavel && !listarResponsaveis(a.responsavel).includes(filtroResponsavel)) return false;
       if (busca) {
@@ -2089,6 +2121,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
         if (chave === "quandoAte" && !fmtBR(a.quandoAte).includes(valor)) return false;
         if (chave === "responsavel" && !listarResponsaveis(a.responsavel).includes(valor)) return false;
         if (chave === "dataConclusao" && !fmtBR(a.dataConclusao).includes(valor)) return false;
+        if (chave === "dataPostergamento" && !fmtBR(a.dataPostergamento).includes(valor)) return false;
         if (chave === "postergar" && (a.postergar || "NÃO") !== valor) return false;
         if (chave === "justificativa" && !String(a.justificativa || "").toLowerCase().includes(valor.toLowerCase())) return false;
         if (chave === "eficacia" && !String(a.eficacia || "").toLowerCase().includes(valor.toLowerCase())) return false;
@@ -2209,6 +2242,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
       "Responsável": a.responsavel || "",
       "Data de Conclusão": a.dataConclusao ? fmtBR(a.dataConclusao) : "",
       "Tempo Ação Aberta (dias)": diasAbertos(a) ?? "",
+      "Data de Postergamento": a.dataPostergamento ? fmtBR(a.dataPostergamento) : "",
       "Postergar": a.postergar || "",
       "Justificativa": a.justificativa || "",
       "Eficácia": a.eficacia || "",
@@ -2249,9 +2283,9 @@ function App({ usuarioAuth, aoAbrirLogin }) {
       doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} | Total: ${dados.length} ações | ${descricaoPeriodo}`, 8, 14);
       const colunas = dados.length ? Object.keys(dados[0]) : [
         "ID","Item","Data de Registro","Evento","Ação","Detalhamento | Como Executar","O que foi feito (FUP)","Evidências",
-        "Data (Start)","Importância","Status","Quando? (Até)","Responsável","Data de Conclusão","Tempo Ação Aberta (dias)","Postergar","Justificativa","Eficácia"
+        "Data (Start)","Importância","Status","Quando? (Até)","Responsável","Data de Conclusão","Tempo Ação Aberta (dias)","Data de Postergamento","Postergar","Justificativa","Eficácia"
       ];
-      const larguras = [14,14,19,25,42,46,46,35,19,20,21,20,34,20,20,18,34,34];
+      const larguras = [14,14,19,25,42,46,46,35,19,20,21,20,34,20,20,22,18,34,34];
       const columnStyles = {};
       larguras.forEach((w, i) => { columnStyles[i] = { cellWidth: w }; });
       doc.autoTable({
@@ -2798,8 +2832,8 @@ function App({ usuarioAuth, aoAbrirLogin }) {
               Excel e PDF incluem <strong>todas as colunas da base</strong> em formato compacto, incluindo ID, evidências, datas, FUP, justificativa e eficácia.
             </div>
             <div className="tbl-wrap" style={{ maxHeight: 520 }}>
-              <table style={{ fontSize: 11, minWidth: 2500 }}>
-                <thead><tr><th>ID</th><th>Item</th><th>Data</th><th>Evento</th><th>Ação</th><th>Detalhamento</th><th>FUP</th><th>Evidências</th><th>Data Start</th><th>Importância</th><th>Status</th><th>Até</th><th>Responsável</th><th>Conclusão</th><th>Tempo aberto</th><th>Postergar</th><th>Justificativa</th><th>Eficácia</th></tr></thead>
+              <table style={{ fontSize: 11, minWidth: 2630 }}>
+                <thead><tr><th>ID</th><th>Item</th><th>Data</th><th>Evento</th><th>Ação</th><th>Detalhamento</th><th>FUP</th><th>Evidências</th><th>Data Start</th><th>Importância</th><th>Status</th><th>Até</th><th>Responsável</th><th>Conclusão</th><th>Tempo aberto</th><th>Data de Postergamento</th><th>Postergar</th><th>Justificativa</th><th>Eficácia</th></tr></thead>
                 <tbody>
                   {acoesRelatorio.map((a) => (
                     <tr key={`rel-${a.id}`}>
@@ -2807,7 +2841,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                       <td>{a.acao || "—"}</td><td>{a.descricao || "—"}</td><td>{a.fup || "—"}</td>
                       <td>{(a.evidencias || []).length}</td><td>{a.dataStart ? fmtBR(a.dataStart) : "—"}</td><td>{importanciaLabel(a.importancia || "")}</td>
                       <td>{statusLabel(a.status || "")}</td><td>{a.quandoAte ? fmtBR(a.quandoAte) : "—"}</td><td>{a.responsavel || "—"}</td>
-                      <td>{a.dataConclusao ? fmtBR(a.dataConclusao) : "—"}</td><td>{diasAbertos(a) ?? "—"}</td><td>{a.postergar || "—"}</td><td>{a.justificativa || "—"}</td><td>{a.eficacia || "—"}</td>
+                      <td>{a.dataConclusao ? fmtBR(a.dataConclusao) : "—"}</td><td>{diasAbertos(a) ?? "—"}</td><td>{a.dataPostergamento ? fmtBR(a.dataPostergamento) : "—"}</td><td>{a.postergar || "—"}</td><td>{a.justificativa || "—"}</td><td>{a.eficacia || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2843,10 +2877,20 @@ function App({ usuarioAuth, aoAbrirLogin }) {
             )}
             <div className="toolbar registro-filter-sticky">
               <input type="text" placeholder="Buscar por ação, item ou responsável…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-              <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
-                <option value="">Todos os status</option>
-                {STATUS_OPCOES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-              </select>
+              <details className="resp-picker" style={{ width: 210, flex: "0 0 210px" }} onClick={(e) => e.stopPropagation()}>
+                <summary title={filtroStatus.length ? filtroStatus.map(statusLabel).join(", ") : "Todos os status"}>
+                  {filtroStatus.length === 0 ? "Todos os status" : filtroStatus.length === 1 ? statusLabel(filtroStatus[0]) : `${filtroStatus.length} status selecionados`}
+                </summary>
+                <div className="resp-picker-menu">
+                  {STATUS_OPCOES.map((s) => (
+                    <label className="resp-picker-option" key={s}>
+                      <input type="checkbox" checked={filtroStatus.includes(s)} onChange={() => alternarFiltroStatus(s)} />
+                      <span>{statusLabel(s)}</span>
+                    </label>
+                  ))}
+                  {filtroStatus.length > 0 && <button type="button" className="btn-ghost" style={{ width: "100%", marginTop: 4 }} onClick={limparFiltroStatus}>Todos os status</button>}
+                </div>
+              </details>
               <select value={filtroImportancia} onChange={(e) => setFiltroImportancia(e.target.value)}>
                 <option value="">Toda importância</option>
                 {IMPORTANCIAS.map((i) => <option key={i} value={i}>{importanciaLabel(i)}</option>)}
@@ -2873,7 +2917,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                   <col className="col-evidencias" />
                   <col className="col-datastart" /><col className="col-imp" /><col className="col-status" />
                   <col className="col-quandoate" /><col className="col-resp" /><col className="col-dataconclusao" />
-                  <col className="col-tempoaberta" /><col className="col-postergar" /><col className="col-justificativa" />
+                  <col className="col-tempoaberta" /><col className="col-datapostergamento" /><col className="col-postergar" /><col className="col-justificativa" />
                   <col className="col-eficacia" /><col className="col-actions" />
                 </colgroup>
                 <thead><tr>
@@ -2900,6 +2944,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                   <th className="th-compact">Responsável</th>
                   <th className="th-compact">Data de Conclusão?</th>
                   <th className="th-compact">Tempo Ação Aberta</th>
+                  <th className="th-compact">Data de Postergamento</th>
                   <th className="th-compact">Postergar?</th>
                   <th>Justificativa p/ Postergamento</th>
                   <th>Eficácia da Implementação</th>
@@ -2944,6 +2989,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                   </td>
                   <td><input className="filtro-input" type="text" placeholder="dd/mm" value={filtrosColuna.dataConclusao || ""} onChange={(e) => setFiltroColuna("dataConclusao", e.target.value)} /></td>
                   <td></td>
+                  <td><input className="filtro-input" type="text" placeholder="dd/mm" value={filtrosColuna.dataPostergamento || ""} onChange={(e) => setFiltroColuna("dataPostergamento", e.target.value)} /></td>
                   <td>
                     <select className="filtro-input" value={filtrosColuna.postergar || ""} onChange={(e) => setFiltroColuna("postergar", e.target.value)}>
                       <option value="">Todos</option>
@@ -3036,7 +3082,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                         </select>
                       </td>
                       <td className="td-compact">
-                        {isAdm ? (
+                        {(isAdm || podeAlterarQuandoAte) ? (
                           <input className="inline-edit" type="date" value={a.quandoAte || ""}
                             onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
                             onKeyDown={impedirDigitacaoData} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}
@@ -3083,6 +3129,12 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                           onChange={(e) => atualizarCampoInline(a.id, "dataConclusao", e.target.value)} />
                       ) : (a.dataConclusao ? fmtBR(a.dataConclusao) : "—")}</td>
                       <td className="td-compact">{a.dataStart ? `${diasAbertos(a)} dia(s)` : "—"}</td>
+                      <td className="td-compact">{isAdm ? (
+                        <input className="inline-edit" type="date" value={a.dataPostergamento || ""}
+                          onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
+                          onKeyDown={impedirDigitacaoData} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}
+                          onChange={(e) => atualizarCampoInline(a.id, "dataPostergamento", e.target.value)} />
+                      ) : (a.dataPostergamento ? fmtBR(a.dataPostergamento) : "—")}</td>
                       <td className="td-compact">{isAdm ? (
                         <select className="inline-edit" value={a.postergar || "NÃO"}
                           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
@@ -3229,7 +3281,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                     <input type="date" value={form.dataStart} disabled={campoBloqueadoParaUser("dataStart")} onChange={(e) => setForm({ ...form, dataStart: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Quando? (Até)</label>
-                    <input type="date" value={form.quandoAte} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, quandoAte: e.target.value })} />
+                    <input type="date" value={form.quandoAte} disabled={campoBloqueadoParaUser("quandoAte")} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, quandoAte: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Data de Conclusão</label>
                     <input type="date" value={form.dataConclusao} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, dataConclusao: e.target.value })} />
@@ -3260,7 +3312,10 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                   )}
                 </div>
 
-                <div className="grid2">
+                <div className="grid3">
+                  <div className="field campo-bloqueado"><label>Data de Postergamento</label>
+                    <input type="date" value={form.dataPostergamento || ""} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, dataPostergamento: e.target.value })} />
+                  </div>
                   <div className="field campo-bloqueado"><label>Necessário Postergar?</label>
                     <select value={form.postergar} onChange={(e) => setForm({ ...form, postergar: e.target.value })}>
                       <option value="NÃO">NÃO</option>
