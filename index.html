@@ -1849,6 +1849,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
   /* ---------- Evidências (Firebase Storage) ---------- */
   const MAX_IMAGENS = 10;
   const MAX_VIDEOS = 5;
+  const MAX_DOCUMENTOS = 15;
   const [evidenciasAcaoId, setEvidenciasAcaoId] = useState(null);
   const [evidenciaUpload, setEvidenciaUpload] = useState(null); // { progresso } | null
   const [evidenciaAmpliada, setEvidenciaAmpliada] = useState(null);
@@ -1867,14 +1868,21 @@ function App({ usuarioAuth, aoAbrirLogin }) {
   function enviarEvidencia(acao, file) {
     const ehImagem = file.type.startsWith("image/");
     const ehVideo = file.type.startsWith("video/");
-    if (!ehImagem && !ehVideo) {
-      setToast("Só é possível anexar imagens ou vídeos.");
+    const ehDocumento = /\.(pdf|doc|docx|ppt|pptx|xls|xlsx|csv|txt|rtf|odt|ods|odp|zip)$/i.test(file.name);
+    if (!ehImagem && !ehVideo && !ehDocumento) {
+      setToast("Formato não permitido. Use imagem, vídeo, PDF, Word, PowerPoint, Excel ou documento comum.");
       setTimeout(() => setToast(null), 3000);
       return;
     }
     const lista = acao.evidencias || [];
     const qtdImagens = lista.filter((e) => e.tipo === "imagem").length;
     const qtdVideos = lista.filter((e) => e.tipo === "video").length;
+    const qtdDocumentos = lista.filter((e) => e.tipo === "documento").length;
+    if (ehDocumento && qtdDocumentos >= MAX_DOCUMENTOS) {
+      setToast(`Limite de ${MAX_DOCUMENTOS} documentos por ação atingido.`);
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
     if (ehImagem && qtdImagens >= MAX_IMAGENS) {
       setToast(`Limite de ${MAX_IMAGENS} imagens por ação atingido.`);
       setTimeout(() => setToast(null), 3000);
@@ -1906,7 +1914,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
       }
       const resp = JSON.parse(xhr.responseText);
       const nova = {
-        id: evidenciaId, tipo: ehImagem ? "imagem" : "video", url: resp.secure_url, publicId: resp.public_id,
+        id: evidenciaId, tipo: ehImagem ? "imagem" : ehVideo ? "video" : "documento", url: resp.secure_url, publicId: resp.public_id,
         nome: file.name, criadoPor: usuarioAuth.email, criadoEm: new Date().toISOString(),
       };
       setAcoes((list) => list.map((a) => a.id === acao.id ? { ...a, evidencias: [...(a.evidencias || []), nova] } : a));
@@ -3047,7 +3055,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                             <React.Fragment>
                               {(a.evidencias || []).slice(0, 3).map((ev) => (
                                 <span className="evidencia-thumb" key={ev.id}>
-                                  {ev.tipo === "imagem" ? <img src={ev.url} alt="" /> : <span className="evidencia-video-thumb"><VideoIcon size={11} /></span>}
+                                  {ev.tipo === "imagem" ? <img src={ev.url} alt="" /> : <span className="evidencia-video-thumb">{ev.tipo === "video" ? <VideoIcon size={11} /> : "📄"}</span>}
                                 </span>
                               ))}
                               {(a.evidencias || []).length > 3 && <span className="evidencia-mais">+{(a.evidencias || []).length - 3}</span>}
@@ -3509,16 +3517,16 @@ function App({ usuarioAuth, aoAbrirLogin }) {
             <div className="picker-head">
               <div>
                 <h3>Evidências</h3>
-                <p>{acaoEvidencias.acao ? acaoEvidencias.acao.slice(0, 70) : `Item ${acaoEvidencias.item}`} · até {MAX_IMAGENS} imagens e {MAX_VIDEOS} vídeos</p>
+                <p>{acaoEvidencias.acao ? acaoEvidencias.acao.slice(0, 70) : `Item ${acaoEvidencias.item}`} · até {MAX_IMAGENS} imagens, {MAX_VIDEOS} vídeos e {MAX_DOCUMENTOS} documentos</p>
               </div>
               <button className="btn-ghost" onClick={fecharEvidencias}><XIcon size={14} /> Fechar</button>
             </div>
 
             <label className="evid-upload-box">
-              <input type="file" accept="image/*,video/*" style={{ display: "none" }}
+              <input type="file" accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.rtf,.odt,.ods,.odp,.zip" style={{ display: "none" }}
                 onChange={(e) => { const f = e.target.files[0]; if (f) enviarEvidencia(acaoEvidencias, f); e.target.value = ""; }} />
               <UploadIcon size={16} style={{ marginBottom: 4 }} /><br />
-              {evidenciaUpload ? `Enviando… ${evidenciaUpload.progresso}%` : "Clique para anexar uma foto ou vídeo"}
+              {evidenciaUpload ? `Enviando… ${evidenciaUpload.progresso}%` : "Clique para anexar imagem, vídeo ou documento (PDF, Word, PPT, Excel...)"}
             </label>
 
             {(acaoEvidencias.evidencias || []).length === 0 ? (
@@ -3526,8 +3534,8 @@ function App({ usuarioAuth, aoAbrirLogin }) {
             ) : (
               <div className="evid-grid">
                 {(acaoEvidencias.evidencias || []).map((ev) => (
-                  <div className="evid-item" key={ev.id} onClick={() => setEvidenciaAmpliada(ev)}>
-                    {ev.tipo === "imagem" ? <img src={ev.url} alt={ev.nome} /> : <video src={ev.url} muted />}
+                  <div className="evid-item" key={ev.id} onClick={() => ev.tipo === "documento" ? window.open(ev.url, "_blank", "noopener,noreferrer") : setEvidenciaAmpliada(ev)}>
+                    {ev.tipo === "imagem" ? <img src={ev.url} alt={ev.nome} /> : ev.tipo === "video" ? <video src={ev.url} muted /> : <div style={{padding:12,textAlign:"center",overflowWrap:"anywhere",fontSize:12}}><div style={{fontSize:28}}>📄</div><strong>{ev.nome}</strong><div style={{marginTop:6}}>Abrir arquivo ↗</div></div>}
                     {ev.tipo === "video" && <span className="evid-item-video-marker"><VideoIcon size={11} /></span>}
                     {usuarioEhResponsavelDaAcao(acaoEvidencias) && (
                       <button className="evid-item-del" title="Excluir evidência" onClick={(e) => { e.stopPropagation(); removerEvidencia(acaoEvidencias, ev); }}><TrashIcon size={11} /></button>
